@@ -1,0 +1,14 @@
+{
+  "name": "disc-golf-tracker",
+  "version": "1.0.0",
+  "description": "PWA that tracks walked distance from a start point using phone GPS.",
+  "private": true,
+  "scripts": {
+    "gen-icons": "node scripts/gen-icons.js"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "pngjs": "^7.0.0"
+  }
+}

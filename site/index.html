@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Disc Golf Tracker</title>
+  <meta name="description" content="Tracks how far you've walked from your last throw, live, in feet, meters, or kilometers.">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DGT">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🥏 Disc Golf Tracker</h1>
+    <p>Set your start point, then walk — the distance updates as you go.</p>
+  </header>
+
+  <main>
+    <div class="distance-panel">
+      <div>
+        <span class="distance-value" id="distanceValue">0</span>
+        <span class="distance-unit" id="distanceUnit">ft</span>
+      </div>
+      <div class="accuracy-line" id="accuracyLine" hidden>
+        <span class="accuracy-dot" id="accuracyDot"></span>
+        <span id="accuracyText"></span>
+      </div>
+    </div>
+
+    <div class="unit-toggle">
+      <button data-unit="ft">Feet</button>
+      <button data-unit="m">Meters</button>
+      <button data-unit="km">Kilometers</button>
+    </div>
+
+    <p class="status-line" id="statusLine"></p>
+
+    <div class="actions">
+      <button class="primary" id="startBtn">Set Start Point</button>
+      <button class="secondary" id="resetBtn" hidden>New Start Point</button>
+    </div>
+  </main>
+
+  <footer>
+    Uses your phone's GPS. Accuracy is typically 10–30 ft in open sky and
+    worse under tree cover — the accuracy reading below shows how much to
+    trust the number.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
