@@ -1,6 +1,7 @@
 // Disc Golf Tracker — walks the distance from a start point to wherever you
 // are now, live, using the phone's GPS. No accounts, no backend: everything
-// lives in this tab.
+// lives in this tab (and localStorage, for the unit choice and throw
+// history, so both survive a reload).
 
 const UNITS = {
   ft: { label: 'ft', fromMeters: (m) => m * 3.28084, decimals: 0 },
@@ -15,9 +16,12 @@ const els = {
   accuracyDot: document.getElementById('accuracyDot'),
   accuracyText: document.getElementById('accuracyText'),
   statusLine: document.getElementById('statusLine'),
-  startBtn: document.getElementById('startBtn'),
+  toggleBtn: document.getElementById('toggleBtn'),
   resetBtn: document.getElementById('resetBtn'),
   unitButtons: [...document.querySelectorAll('.unit-toggle button')],
+  historyPanel: document.getElementById('historyPanel'),
+  historyList: document.getElementById('historyList'),
+  clearHistoryBtn: document.getElementById('clearHistoryBtn'),
 }
 
 let unit = localStorage.getItem('dgt-unit') || 'ft'
@@ -25,6 +29,7 @@ let watchId = null
 let startPos = null // { lat, lon, accuracy }
 let lastPos = null
 let locking = false        // true while waiting for a tight-enough first fix
+let tracking = false       // true once locked in and getting live updates
 let lockDeadline = 0       // Date.now() past which we lock whatever we have
 let bestLockCandidate = null
 
@@ -42,12 +47,17 @@ const LOCK_TIMEOUT_MS = 8000
 // rather than just showing a distance that quietly refuses to change.
 const POOR_ACCURACY_M = 30
 
+// How many past throws to keep. A session, not a logbook — old ones just
+// fall off the end rather than growing localStorage forever.
+const HISTORY_LIMIT = 20
+
 function setUnit(next) {
   unit = next
   localStorage.setItem('dgt-unit', unit)
   els.unitButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.unit === unit))
   els.distanceUnit.textContent = UNITS[unit].label
   if (lastPos) render()
+  renderHistory()
 }
 
 els.unitButtons.forEach(btn => btn.addEventListener('click', () => setUnit(btn.dataset.unit)))
@@ -76,9 +86,19 @@ function formatDistance(meters) {
   })
 }
 
+function metersToUnitString(m) {
+  const v = UNITS[unit].fromMeters(m)
+  return `${v.toLocaleString(undefined, { maximumFractionDigits: unit === 'km' ? 2 : 0 })} ${UNITS[unit].label}`
+}
+
+function currentDistanceMeters() {
+  if (!startPos || !lastPos) return null
+  return haversineMeters(startPos.lat, startPos.lon, lastPos.lat, lastPos.lon)
+}
+
 function render() {
-  if (!startPos || !lastPos) return
-  const meters = haversineMeters(startPos.lat, startPos.lon, lastPos.lat, lastPos.lon)
+  const meters = currentDistanceMeters()
+  if (meters == null) return
   els.distanceValue.textContent = formatDistance(meters)
 
   // Both fixes carry their own GPS uncertainty; the true distance could be
@@ -119,24 +139,82 @@ function stopWatch() {
   }
 }
 
-function reset() {
+// ---------------------------------------------------------------- history
+
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem('dgt-history') || '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveHistory(list) {
+  localStorage.setItem('dgt-history', JSON.stringify(list.slice(0, HISTORY_LIMIT)))
+}
+
+function addToHistory(meters, accuracyM) {
+  const list = loadHistory()
+  list.unshift({ meters, accuracyM, at: Date.now() })
+  saveHistory(list)
+  renderHistory()
+}
+
+function formatAgo(ts) {
+  const mins = Math.floor((Date.now() - ts) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function renderHistory() {
+  const list = loadHistory()
+  els.historyPanel.hidden = list.length === 0
+  if (list.length === 0) {
+    els.historyList.innerHTML = ''
+    return
+  }
+  els.historyList.innerHTML = list.map(entry => {
+    const { fromMeters, decimals } = UNITS[unit]
+    const value = fromMeters(entry.meters).toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
+    return `<div class="history-row">
+      <span class="hr-distance">${value}<span class="hr-unit">${UNITS[unit].label}</span></span>
+      <span class="hr-time">${formatAgo(entry.at)}</span>
+    </div>`
+  }).join('')
+}
+
+els.clearHistoryBtn.addEventListener('click', () => {
+  saveHistory([])
+  renderHistory()
+})
+
+renderHistory()
+
+// ---------------------------------------------------------------- flow
+
+function setIdleUI() {
+  els.toggleBtn.textContent = 'Start'
+  els.toggleBtn.classList.remove('is-stop')
+  els.toggleBtn.disabled = false
+}
+
+function resetAll() {
   stopWatch()
   startPos = null
   lastPos = null
   locking = false
+  tracking = false
   bestLockCandidate = null
   els.distanceValue.textContent = '0'
   els.accuracyLine.hidden = true
-  els.resetBtn.hidden = true
-  els.startBtn.hidden = false
-  els.startBtn.disabled = false
-  els.startBtn.textContent = 'Set Start Point'
+  setIdleUI()
   setStatus('')
-}
-
-function metersToUnitString(m) {
-  const v = UNITS[unit].fromMeters(m)
-  return `${v.toLocaleString(undefined, { maximumFractionDigits: unit === 'km' ? 2 : 0 })} ${UNITS[unit].label}`
 }
 
 // Runs on every fix while we're still choosing the start point. Locks in as
@@ -160,12 +238,14 @@ function handleLockingFix(pos) {
   }
 
   locking = false
+  tracking = true
   startPos = bestLockCandidate
   lastPos = { ...bestLockCandidate }
   render()
   setStatus(trackingStatus(bestLockCandidate.accuracy))
-  els.startBtn.hidden = true
-  els.resetBtn.hidden = false
+  els.toggleBtn.textContent = 'Stop'
+  els.toggleBtn.classList.add('is-stop')
+  els.toggleBtn.disabled = false
 }
 
 // What to say while tracking, given the live fix's own accuracy — a poor
@@ -178,16 +258,17 @@ function trackingStatus(accuracyM) {
   return 'Tracking — walk toward your target.'
 }
 
-function beginTracking() {
+function startTracking() {
   if (!('geolocation' in navigator)) {
     setStatus("This phone's browser doesn't support location.", true)
     return
   }
 
-  els.startBtn.disabled = true
-  els.startBtn.textContent = 'Locking GPS...'
+  els.toggleBtn.disabled = true
+  els.toggleBtn.textContent = 'Starting...'
   setStatus('Getting a GPS fix for your start point...')
   locking = true
+  tracking = false
   bestLockCandidate = null
   lockDeadline = Date.now() + LOCK_TIMEOUT_MS
 
@@ -208,16 +289,41 @@ function beginTracking() {
     (err) => {
       setStatus(geoErrorMessage(err), true)
       if (locking) {
-        els.startBtn.disabled = false
-        els.startBtn.textContent = 'Set Start Point'
+        locking = false
+        setIdleUI()
       }
     },
     { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
   )
 }
 
-els.startBtn.addEventListener('click', beginTracking)
-els.resetBtn.addEventListener('click', reset)
+// Stop = "I'm done with this throw" — it saves the distance to history
+// (that's what makes stopping different from Reset) and leaves the frozen
+// number on screen so it's still readable after the GPS watch ends.
+function stopTracking() {
+  stopWatch()
+  const meters = currentDistanceMeters()
+  if (tracking && meters != null) {
+    const combinedAccuracyM = (startPos.accuracy || 0) + (lastPos.accuracy || 0)
+    addToHistory(meters, combinedAccuracyM)
+    setStatus('Saved. Press Start for a new point, or Reset to clear.')
+  } else {
+    // Stopped mid-lock, before any real reading existed — nothing to save.
+    setStatus('')
+  }
+  locking = false
+  tracking = false
+  setIdleUI()
+}
+
+els.toggleBtn.addEventListener('click', () => {
+  if (locking || tracking) {
+    stopTracking()
+  } else {
+    startTracking()
+  }
+})
+els.resetBtn.addEventListener('click', resetAll)
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
