@@ -2,7 +2,7 @@
 // — GPS doesn't need one either, so this makes the whole thing usable on a
 // course with no signal. Bump CACHE_NAME whenever a shell file changes so
 // clients pick up the new version instead of serving the stale cache forever.
-const CACHE_NAME = 'dgt-v5'
+const CACHE_NAME = 'dgt-v6'
 const SHELL_FILES = [
   './',
   './index.html',
