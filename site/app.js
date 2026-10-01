@@ -35,6 +35,13 @@ let bestLockCandidate = null
 const LOCK_ACCURACY_M = 15
 const LOCK_TIMEOUT_MS = 8000
 
+// Above this, a fix is almost certainly Wi-Fi/cell-tower based rather than
+// true GPS — the classic symptom is indoors, where satellites are blocked
+// and the phone falls back to a room-or-building-level estimate that barely
+// moves no matter how far you actually walk. Worth saying so explicitly
+// rather than just showing a distance that quietly refuses to change.
+const POOR_ACCURACY_M = 30
+
 function setUnit(next) {
   unit = next
   localStorage.setItem('dgt-unit', unit)
@@ -145,7 +152,10 @@ function handleLockingFix(pos) {
   const goodEnough = candidate.accuracy <= LOCK_ACCURACY_M
   const timedOut = Date.now() >= lockDeadline
   if (!goodEnough && !timedOut) {
-    setStatus(`Locking your start point... (± ${metersToUnitString(candidate.accuracy)} so far)`)
+    const indoorHint = candidate.accuracy > POOR_ACCURACY_M
+      ? ' — this usually means GPS can\'t see the sky (indoors, under cover). Move outside for a real fix.'
+      : ''
+    setStatus(`Locking your start point... (± ${metersToUnitString(candidate.accuracy)} so far)${indoorHint}`)
     return
   }
 
@@ -153,9 +163,19 @@ function handleLockingFix(pos) {
   startPos = bestLockCandidate
   lastPos = { ...bestLockCandidate }
   render()
-  setStatus('Tracking — walk toward your target.')
+  setStatus(trackingStatus(bestLockCandidate.accuracy))
   els.startBtn.hidden = true
   els.resetBtn.hidden = false
+}
+
+// What to say while tracking, given the live fix's own accuracy — a poor
+// fix after lock-in is the same indoor/no-sky situation, just discovered a
+// little later (GPS can degrade mid-session too, e.g. walking under trees).
+function trackingStatus(accuracyM) {
+  if (accuracyM > POOR_ACCURACY_M) {
+    return `Weak signal (± ${metersToUnitString(accuracyM)}) — if you're indoors or under heavy cover, distance may barely move. Try open sky.`
+  }
+  return 'Tracking — walk toward your target.'
 }
 
 function beginTracking() {
@@ -183,7 +203,7 @@ function beginTracking() {
       }
       lastPos = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy }
       render()
-      setStatus('Tracking — walk toward your target.')
+      setStatus(trackingStatus(pos.coords.accuracy))
     },
     (err) => {
       setStatus(geoErrorMessage(err), true)
